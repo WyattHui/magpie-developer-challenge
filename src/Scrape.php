@@ -33,24 +33,36 @@ class Scrape
 
     private function createProductsFromDocument(Crawler $node): array
     {
-        return $this->getProducts($node)->each(function (Crawler $node) {
+        $products = [];
+
+        $this->getProducts($node)->each(function (Crawler $node) use (& $products) {
             $capacity = $this->getCapacity($node);
+            $title = $this->getTitle($node, $capacity);
+            $price = $this->getPrice($node);
+            $imageUrl = $this->getImageUrl($node);
+            $capacityMB = $this->getCapacityMB($capacity);
             [$availability, $shipping] = $this->getAvailabilityAndShipping($node);
             $availabilityText = $this->getAvailabilityText($availability);
+            $isAvailable = $this->getIsAvailable($availabilityText ?? '');
             [$shippingText, $shippingDate] = $this->getShippingDetails($shipping ?? '');
 
-            return new Product(
-                $this->getTitle($node, $capacity),
-                $this->getPrice($node),
-                $this->getImageUrl($node),
-                $this->getCapacityMB($capacity),
-                $this->getColour($node),
-                $availabilityText,
-                $this->getIsAvailable($availabilityText ?? ''),
-                $shippingText,
-                $shippingDate
-            );
+            $colours = $this->getColours($node);
+            foreach ($colours as $colour) {
+                array_push($products, new Product(
+                    $title,
+                    $price,
+                    $imageUrl,
+                    $capacityMB,
+                    $colour,
+                    $availabilityText,
+                    $isAvailable,
+                    $shippingText,
+                    $shippingDate
+                ));
+            }
         });
+
+        return $products;
     }
 
     private function getProducts(Crawler $node): Crawler
@@ -125,10 +137,9 @@ class Scrape
         );
     }
 
-    private function getColour(Crawler $node)
+    private function getColours(Crawler $node)
     {
-        $attributes = $node->filter('span[data-colour]')->extract(['data-colour']);
-        return implode('|', $attributes);
+        return $node->filter('span[data-colour]')->extract(['data-colour']);
     }
 
     private function getAvailabilityText(string $text)
@@ -198,13 +209,16 @@ class Scrape
 
     private function deDupeProducts(array $products): array
     {
-        $titles = [];
+        $titleColorKeys = [];
         return array_reduce(
             $products,
-            function ($carry, $product) use (& $titles) {
+            function ($carry, $product) use (& $titleColorKeys) {
                 $title = $product->getTitle();
-                if (!in_array($title, $titles)) {
-                    array_push($titles, $title);
+                $colour = $product->getColour();
+                $titleColourKey = $title.'-'.$colour;
+
+                if (!in_array($titleColourKey, $titleColorKeys)) {
+                    array_push($titleColorKeys, $titleColourKey);
                     array_push($carry, $product);
                 }
                 return $carry;
