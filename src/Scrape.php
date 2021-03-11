@@ -34,18 +34,19 @@ class Scrape
     private function createProductsFromDocument(Crawler $node): array
     {
         return $this->getProducts($node)->each(function (Crawler $node) {
-            $contentTexts = $this->getContentTexts($node);
             $capacity = $this->getCapacity($node);
-            $availabilityText = $this->getAvailabilityText($contentTexts);
-            [$shippingText, $shippingDate] = $this->getShippingDetails($contentTexts);
+            [$availability, $shipping] = $this->getAvailabilityAndShipping($node);
+            $availabilityText = $this->getAvailabilityText($availability);
+            [$shippingText, $shippingDate] = $this->getShippingDetails($shipping ?? '');
+
             return new Product(
                 $this->getTitle($node, $capacity),
-                $this->getPrice($contentTexts),
+                $this->getPrice($node),
                 $this->getImageUrl($node),
                 $this->getCapacityMB($capacity),
                 $this->getColour($node),
                 $availabilityText,
-                $this->getIsAvailable($availabilityText),
+                $this->getIsAvailable($availabilityText ?? ''),
                 $shippingText,
                 $shippingDate
             );
@@ -57,19 +58,22 @@ class Scrape
         return $node->filter('body #products .product');
     }
 
-    private function getContentTexts(Crawler $node): array
+    private function getCapacity(Crawler $node)
     {
-        $contentTexts = $node->filter('div div div')
+        return $node->filter('.product-capacity')->text();
+    }
+
+    private function getAvailabilityAndShipping(Crawler $node): array
+    {
+        $array = $node->filter('.my-4.text-sm.block.text-center')
             ->each(function (Crawler $node) {
                 return $node->text();
             });
 
-        return array_filter($contentTexts);
-    }
+        $availability = $array[0] ?? null;
+        $shipping = $array[1] ?? null;
 
-    private function getCapacity(Crawler $node)
-    {
-        return $node->filter('.product-capacity')->text();
+        return [$availability, $shipping];
     }
 
     private function getTitle(Crawler $node, $capacity)
@@ -86,14 +90,13 @@ class Scrape
         return implode(' ', $array);
     }
 
-    private function getPrice(array $contentTexts)
+    private function getPrice(Crawler $node)
     {
         $priceRegex = '/£(?<price>(\d*[.])?\d+)/';
-        foreach ($contentTexts as $text) {
-            preg_match($priceRegex, $text, $matches);
-            if (array_key_exists('price', $matches)) {
-                return (float) $matches['price'];
-            }
+        $text = $node->filter('.my-8.block.text-center.text-lg')->text();
+        preg_match($priceRegex, $text, $matches);
+        if (array_key_exists('price', $matches)) {
+            return (float) $matches['price'];
         }
     }
 
@@ -128,14 +131,12 @@ class Scrape
         return implode('|', $attributes);
     }
 
-    private function getAvailabilityText(array $contentTexts)
+    private function getAvailabilityText(string $text)
     {
         $priceRegex = '/Availability:\s(?<availability>.*)/';
-        foreach ($contentTexts as $text) {
-            preg_match($priceRegex, $text, $matches);
-            if (array_key_exists('availability', $matches)) {
-                return $matches['availability'];
-            }
+        preg_match($priceRegex, $text, $matches);
+        if (array_key_exists('availability', $matches)) {
+            return $matches['availability'];
         }
     }
 
@@ -146,25 +147,26 @@ class Scrape
         return array_key_exists('isAvailable', $matches);
     }
 
-    private function getShippingDetails(array $contentTexts): array
+    private function getShippingDetails(string $text): array
     {
         $shippingDateRegex = '/((\bDelivery\sby\s\b)|(\bDelivery\sfrom\s\b)|(\bDelivers\s\b))(?<date>.*)/';
-        foreach ($contentTexts as $text) {
-            if (in_array($text, [
-                'Unavailable for delivery',
-                'Free Delivery',
-                'Free Shipping'
-            ])) {
-                return [$text, null];
-            }
-            preg_match($shippingDateRegex, $text, $matches);
-            if (array_key_exists('date', $matches)) {
-                return [
-                    $text,
-                    $this->formatShippingDate($matches['date'])
-                ];
-            }
+
+        if (in_array($text, [
+            'Unavailable for delivery',
+            'Free Delivery',
+            'Free Shipping'
+        ])) {
+            return [$text, null];
         }
+
+        preg_match($shippingDateRegex, $text, $matches);
+        if (array_key_exists('date', $matches)) {
+            return [
+                $text,
+                $this->formatShippingDate($matches['date'])
+            ];
+        }
+
         return [null, null];
     }
 
