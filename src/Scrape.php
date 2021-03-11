@@ -191,14 +191,18 @@ class Scrape
 
     private function formatShippingDate(string $text)
     {
-        $dateFormat = 'd M Y';
-        $date = DateTime::createFromFormat($dateFormat, $text);
+        $dateFormats = [
+            'Y-m-d',
+            'd M Y',
+            'l dS M Y'
+        ];
 
-        if (!$date) {
-            return;
+        foreach ($dateFormats as $dateFormat) {
+            $date = DateTime::createFromFormat($dateFormat, $text);
+            if ($date) {
+                return date_format($date, 'Y-m-d');
+            }
         }
-
-        return date_format($date, 'Y-m-d');
     }
 
     private function pushTitleColourKey(string $title, string $colour): bool
