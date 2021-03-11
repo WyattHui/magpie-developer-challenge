@@ -83,7 +83,7 @@ class Scrape
             return;
         }
 
-        return implode($array, ' ');
+        return implode(' ', $array);
     }
 
     private function getPrice(array $contentTexts)
@@ -125,7 +125,7 @@ class Scrape
     private function getColour(Crawler $node)
     {
         $attributes = $node->filter('span[data-colour]')->extract(['data-colour']);
-        return implode($attributes, '|');
+        return implode('|', $attributes);
     }
 
     private function getAvailabilityText(array $contentTexts)
