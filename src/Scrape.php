@@ -12,11 +12,11 @@ class Scrape
 {
     private string $url = 'https://www.magpiehq.com/developer-challenge/smartphones/';
     private array $products = [];
+    private array $productTitleColourKeys = [];
 
     public function run(): void
     {
         $this->fetchProductsFromPage($this->getUrl());
-        $this->products = $this->deDupeProducts($this->products);
 
         file_put_contents('output.json', json_encode($this->products));
     }
@@ -38,6 +38,11 @@ class Scrape
         $this->getProducts($node)->each(function (Crawler $node) use (& $products) {
             $capacity = $this->getCapacity($node);
             $title = $this->getTitle($node, $capacity);
+
+            if (is_null($title)) {
+                return;
+            }
+
             $price = $this->getPrice($node);
             $imageUrl = $this->getImageUrl($node);
             $capacityMB = $this->getCapacityMB($capacity);
@@ -48,17 +53,20 @@ class Scrape
 
             $colours = $this->getColours($node);
             foreach ($colours as $colour) {
-                array_push($products, new Product(
-                    $title,
-                    $price,
-                    $imageUrl,
-                    $capacityMB,
-                    $colour,
-                    $availabilityText,
-                    $isAvailable,
-                    $shippingText,
-                    $shippingDate
-                ));
+                $isValid = $this->pushTitleColourKey($title, $colour);
+                if ($isValid) {
+                    array_push($products, new Product(
+                        $title,
+                        $price,
+                        $imageUrl,
+                        $capacityMB,
+                        $colour,
+                        $availabilityText,
+                        $isAvailable,
+                        $shippingText,
+                        $shippingDate
+                    ));
+                }
             }
         });
 
@@ -193,6 +201,18 @@ class Scrape
         return date_format($date, 'Y-m-d');
     }
 
+    private function pushTitleColourKey(string $title, string $colour): bool
+    {
+        $titleColourKey = $title.'-'.$colour;
+
+        if (in_array($titleColourKey, $this->productTitleColourKeys)) {
+            return false;
+        }
+
+        array_push($this->productTitleColourKeys, $titleColourKey);
+        return true;
+    }
+
     private function getNextPageUrl(Crawler $node)
     {
         $activeNode = $node->filter('#pages div a.active')->eq(0);
@@ -205,26 +225,6 @@ class Scrape
         $attributes = $nextAll->eq(0)->extract(['href']);
         $href = $attributes[0];
         return UriResolver::resolve($href, $this->getUrl());
-    }
-
-    private function deDupeProducts(array $products): array
-    {
-        $titleColorKeys = [];
-        return array_reduce(
-            $products,
-            function ($carry, $product) use (& $titleColorKeys) {
-                $title = $product->getTitle();
-                $colour = $product->getColour();
-                $titleColourKey = $title.'-'.$colour;
-
-                if (!in_array($titleColourKey, $titleColorKeys)) {
-                    array_push($titleColorKeys, $titleColourKey);
-                    array_push($carry, $product);
-                }
-                return $carry;
-            },
-            []
-        );
     }
 
     private function getUrl(): string
